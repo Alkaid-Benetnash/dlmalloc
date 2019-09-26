@@ -1,5 +1,7 @@
+#include <vai/fpga.h>
 #include <linux/mman.h>
 #include "dlmalloc.h"
+#include "vai_internal.h"
 
 /*
   This is a version (aka dlmalloc) of malloc/free/realloc written by
@@ -1287,7 +1289,7 @@ typedef void* mspace;
   compiling with a different DEFAULT_GRANULARITY or dynamically
   setting with mallopt(M_GRANULARITY, value).
 */
-DLMALLOC_EXPORT mspace create_mspace(size_t capacity, int locked);
+DLMALLOC_EXPORT mspace create_mspace(size_t capacity, int locked, struct vai_afu_conn *conn);
 
 /*
   destroy_mspace destroys the given space, and attempts to return all
@@ -2604,6 +2606,7 @@ struct malloc_state {
   msegment   seg;
   void*      extp;      /* Unused but available for extensions */
   size_t     exts;
+  struct vai_afu_conn *conn;
 };
 
 typedef struct malloc_state*    mstate;
@@ -4152,11 +4155,18 @@ static void* sys_alloc(mstate m, size_t nb) {
         if (m->seg.base == MAP_FAILED) {
             goto MMAP_SKIP;
         }
+        else
+            vai_afu_set_mem_base(m->conn, (uint64_t)m->seg.base);
     }
     //char* mp = (char*)(CALL_MMAP(asize));
     char *mp = m->seg.base + m->seg.size;
     int ret_mp = mprotect(mp, asize, MMAP_PROT);
-    if (ret_mp != -1) {
+    int ret_vmap;
+    if (ret_mp != -1)
+        ret_vmap = vai_afu_map_region(m->conn, (uint64_t)mp, asize);
+    else
+        ret_vmap = -1;
+    if (ret_vmap != -1) {
       tbase = mp;
       tsize = asize;
       mmap_flag = USE_MMAP_BIT;
@@ -4583,7 +4593,6 @@ void* dlmalloc(size_t bytes) {
 #if defined(USE_LOCKS)
   ensure_initialization(); /* initialize in sys_alloc if not using locks */
 #endif
-
   if (!PREACTION(gm)) {
     void* mem;
     size_t nb;
@@ -5434,7 +5443,7 @@ static mstate init_user_mstate(char* tbase, size_t tsize) {
   return m;
 }
 
-mspace create_mspace(size_t capacity, int locked) {
+mspace create_mspace(size_t capacity, int locked, struct vai_afu_conn *conn) {
   mstate m = 0;
   size_t msize;
   ensure_initialization();
@@ -5446,10 +5455,18 @@ mspace create_mspace(size_t capacity, int locked) {
     //char* tbase = (char*)(CALL_MMAP(tsize));
     char* tbase = (char*)mmap(NULL, MMAP_RESERVE_VMSPACE_SIZE, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_HUGETLB|MAP_HUGE_2MB, -1, 0);
     int ret_mpt = mprotect(tbase, tsize, MMAP_PROT);
+    int ret_vmap;
     if (ret_mpt != -1) {
+        vai_afu_set_mem_base(conn, (uint64_t)tbase);
+        ret_vmap = vai_afu_map_region(conn, (uint64_t)tbase, tsize);
+    }
+    else
+        ret_vmap = -1;
+    if (ret_vmap != -1) {
       m = init_user_mstate(tbase, tsize);
       m->seg.sflags = USE_MMAP_BIT;
       set_lock(m, locked);
+      m->conn = conn;
     }
   }
   return (mspace)m;
