@@ -1,3 +1,6 @@
+#include <linux/mman.h>
+#include "dlmalloc.h"
+
 /*
   This is a version (aka dlmalloc) of malloc/free/realloc written by
   Doug Lea and released to the public domain, as explained at
@@ -716,7 +719,9 @@ MAX_RELEASE_CHECK_RATE   default: 4095 unless not HAVE_MMAP
 #ifndef NO_SEGMENT_TRAVERSAL
 #define NO_SEGMENT_TRAVERSAL 0
 #endif /* NO_SEGMENT_TRAVERSAL */
-
+#ifndef MMAP_RESERVE_VMSPACE_SIZE
+#define MMAP_RESERVE_VMSPACE_SIZE (1L<<36)
+#endif /* default reserve 64GB space*/
 /*
   mallopt tuning options.  SVID/XPG defines four standard parameter
   numbers for mallopt, normally defined in malloc.h.  None of these
@@ -3550,6 +3555,7 @@ static void internal_malloc_stats(mstate m) {
     fprintf(stderr, "max system bytes = %10lu\n", (unsigned long)(maxfp));
     fprintf(stderr, "system bytes     = %10lu\n", (unsigned long)(fp));
     fprintf(stderr, "in use bytes     = %10lu\n", (unsigned long)(used));
+    fprintf(stderr, "first seg base %p, size %zu, next %p\n", m->seg.base, m->seg.size, m->seg.next);
   }
 }
 #endif /* NO_MALLOC_STATS */
@@ -4139,13 +4145,24 @@ static void* sys_alloc(mstate m, size_t nb) {
   }
 
   if (HAVE_MMAP && tbase == CMFAIL) {  /* Try MMAP */
-    char* mp = (char*)(CALL_MMAP(asize));
-    if (mp != CMFAIL) {
+    if (!is_initialized(m)) { //initialize large 64GB mmap
+        m->seg.base = (char*)mmap(NULL, MMAP_RESERVE_VMSPACE_SIZE, PROT_NONE,
+                MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_HUGETLB|MAP_HUGE_2MB, -1, 0);
+        m->seg.size = 0;
+        if (m->seg.base == MAP_FAILED) {
+            goto MMAP_SKIP;
+        }
+    }
+    //char* mp = (char*)(CALL_MMAP(asize));
+    char *mp = m->seg.base + m->seg.size;
+    int ret_mp = mprotect(mp, asize, MMAP_PROT);
+    if (ret_mp != -1) {
       tbase = mp;
       tsize = asize;
       mmap_flag = USE_MMAP_BIT;
     }
   }
+  MMAP_SKIP:
 
   if (HAVE_MORECORE && tbase == CMFAIL) { /* Try noncontiguous MORECORE */
     if (asize < HALF_MAX_SIZE_T) {
@@ -4310,8 +4327,9 @@ static int sys_trim(mstate m, size_t pad) {
             size_t newsize = sp->size - extra;
             (void)newsize; /* placate people compiling -Wunused-variable */
             /* Prefer mremap, fall back to munmap */
-            if ((CALL_MREMAP(sp->base, sp->size, newsize, 0) != MFAIL) ||
-                (CALL_MUNMAP(sp->base + newsize, extra) == 0)) {
+            //if ((CALL_MREMAP(sp->base, sp->size, newsize, 0) != MFAIL) ||
+            //    (CALL_MUNMAP(sp->base + newsize, extra) == 0)) {
+            if ((mprotect(sp->base + newsize, extra, PROT_NONE) != -1)) {
               released = extra;
             }
           }
@@ -5425,8 +5443,10 @@ mspace create_mspace(size_t capacity, int locked) {
     size_t rs = ((capacity == 0)? mparams.granularity :
                  (capacity + TOP_FOOT_SIZE + msize));
     size_t tsize = granularity_align(rs);
-    char* tbase = (char*)(CALL_MMAP(tsize));
-    if (tbase != CMFAIL) {
+    //char* tbase = (char*)(CALL_MMAP(tsize));
+    char* tbase = (char*)mmap(NULL, MMAP_RESERVE_VMSPACE_SIZE, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_HUGETLB|MAP_HUGE_2MB, -1, 0);
+    int ret_mpt = mprotect(tbase, tsize, MMAP_PROT);
+    if (ret_mpt != -1) {
       m = init_user_mstate(tbase, tsize);
       m->seg.sflags = USE_MMAP_BIT;
       set_lock(m, locked);
