@@ -27,12 +27,13 @@
  * configuration
  */
 #define HAVE_MORECORE 0
-#define MALLOC_ALIGNMENT 256
+#define MALLOC_ALIGNMENT 8
 #define DEFAULT_MMAP_THRESHOLD MAX_SIZE_T
-// allocation granularity is 2M
-#define DEFAULT_GRANULARITY (1UL << 21)
+// allocation granularity is 64K
+#define DEFAULT_GRANULARITY (1UL << 16)
 #define MMAP_RESERVE_VMSPACE_SIZE (1L<<36)
 #define USE_LOCKS 1
+#define ONLY_MSPACES 1
 
 #ifdef __cplusplus
 extern "C" {
@@ -550,7 +551,7 @@ typedef void* mspace;
   compiling with a different DEFAULT_GRANULARITY or dynamically
   setting with mallopt(M_GRANULARITY, value).
 */
-mspace create_mspace(size_t capacity, int locked);
+mspace create_mspace(size_t capacity, int locked, void *base_address);
 
 /*
   destroy_mspace destroys the given space, and attempts to return all

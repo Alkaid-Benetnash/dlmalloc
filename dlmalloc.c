@@ -1286,8 +1286,11 @@ typedef void* mspace;
   control the sizes of incremental increases of this space by
   compiling with a different DEFAULT_GRANULARITY or dynamically
   setting with mallopt(M_GRANULARITY, value).
+  
+  if base_address is not NULL, reserve the memory space using mmap fixed to base_address.
+  if base_address is NULL, do nothing special.
 */
-DLMALLOC_EXPORT mspace create_mspace(size_t capacity, int locked);
+DLMALLOC_EXPORT mspace create_mspace(size_t capacity, int locked, void *base_address);
 
 /*
   destroy_mspace destroys the given space, and attempts to return all
@@ -4147,7 +4150,7 @@ static void* sys_alloc(mstate m, size_t nb) {
   if (HAVE_MMAP && tbase == CMFAIL) {  /* Try MMAP */
     if (!is_initialized(m)) { //initialize large 64GB mmap
         m->seg.base = (char*)mmap(NULL, MMAP_RESERVE_VMSPACE_SIZE, PROT_NONE,
-                MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_HUGETLB|MAP_HUGE_2MB, -1, 0);
+                MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
         m->seg.size = 0;
         if (m->seg.base == MAP_FAILED) {
             goto MMAP_SKIP;
@@ -5434,7 +5437,7 @@ static mstate init_user_mstate(char* tbase, size_t tsize) {
   return m;
 }
 
-mspace create_mspace(size_t capacity, int locked) {
+mspace create_mspace(size_t capacity, int locked, void *base_address) {
   mstate m = 0;
   size_t msize;
   ensure_initialization();
@@ -5444,7 +5447,21 @@ mspace create_mspace(size_t capacity, int locked) {
                  (capacity + TOP_FOOT_SIZE + msize));
     size_t tsize = granularity_align(rs);
     //char* tbase = (char*)(CALL_MMAP(tsize));
-    char* tbase = (char*)mmap(NULL, MMAP_RESERVE_VMSPACE_SIZE, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_HUGETLB|MAP_HUGE_2MB, -1, 0);
+    char *tbase = NULL;
+    if (base_address) {
+        tbase = (char*)mmap(base_address, MMAP_RESERVE_VMSPACE_SIZE, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_FIXED , -1, 0);
+        if (tbase == MAP_FAILED) {
+            perror("FIXED MMAP FAILED");
+            exit(-1);
+        }
+    }
+    else {
+        tbase = (char*)mmap(NULL, MMAP_RESERVE_VMSPACE_SIZE, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
+        if (tbase == MAP_FAILED) {
+            perror("NON-FIXED MMAP FAILED");
+            exit(-1);
+        }
+    }
     int ret_mpt = mprotect(tbase, tsize, MMAP_PROT);
     if (ret_mpt != -1) {
       m = init_user_mstate(tbase, tsize);
