@@ -518,7 +518,7 @@ void  dlmalloc_stats(void);
   p = malloc(n);
   assert(malloc_usable_size(p) >= 256);
 */
-size_t dlmalloc_usable_size(const void*);
+size_t dlmalloc_usable_size(void*);
 
 #if MSPACES
 
