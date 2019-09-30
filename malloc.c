@@ -589,7 +589,7 @@ MAX_RELEASE_CHECK_RATE   default: 4095 unless not HAVE_MMAP
                     (defined(USE_RECURSIVE_LOCKS) && USE_RECURSIVE_LOCKS != 0))
 #endif /* USE_LOCKS */
 
-#if USE_LOCKS /* Spin locks for gcc >= 4.1, older gcc on x86, MSC >= 1310 */
+#if defined(USE_LOCKS) /* Spin locks for gcc >= 4.1, older gcc on x86, MSC >= 1310 */
 #if ((defined(__GNUC__) &&                                              \
       ((__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 1)) ||      \
        defined(__i386__) || defined(__x86_64__))) ||                    \
@@ -1491,7 +1491,7 @@ extern void*     sbrk(ptrdiff_t);
 #endif /* LACKS_UNISTD_H */
 
 /* Declarations for locking */
-#if USE_LOCKS
+#if defined(USE_LOCKS)
 #ifndef WIN32
 #if defined (__SVR4) && defined (__sun)  /* solaris */
 #include <thread.h>
@@ -2593,7 +2593,7 @@ struct malloc_state {
   size_t     max_footprint;
   size_t     footprint_limit; /* zero means no limit */
   flag_t     mflags;
-#if USE_LOCKS
+#if defined(USE_LOCKS)
   MLOCK_T    mutex;     /* locate lock among fields that rarely change */
 #endif /* USE_LOCKS */
   msegment   seg;
@@ -2643,7 +2643,7 @@ static struct malloc_state _gm_;
 
 #define use_lock(M)           ((M)->mflags &   USE_LOCK_BIT)
 #define enable_lock(M)        ((M)->mflags |=  USE_LOCK_BIT)
-#if USE_LOCKS
+#if defined(USE_LOCKS)
 #define disable_lock(M)       ((M)->mflags &= ~USE_LOCK_BIT)
 #else
 #define disable_lock(M)
@@ -2739,7 +2739,7 @@ static int has_segment_link(mstate m, msegmentptr ss) {
   anything you like.
 */
 
-#if USE_LOCKS
+#if defined(USE_LOCKS)
 #define PREACTION(M)  ((use_lock(M))? ACQUIRE_LOCK(&(M)->mutex) : 0)
 #define POSTACTION(M) { if (use_lock(M)) RELEASE_LOCK(&(M)->mutex); }
 #else /* USE_LOCKS */
@@ -4562,7 +4562,7 @@ void* dlmalloc(size_t bytes) {
      The ugly goto's here ensure that postaction occurs along all paths.
   */
 
-#if USE_LOCKS
+#if defined(USE_LOCKS)
   ensure_initialization(); /* initialize in sys_alloc if not using locks */
 #endif
 
