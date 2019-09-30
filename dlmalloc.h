@@ -35,6 +35,7 @@
 #define USE_LOCKS 1
 #define ONLY_MSPACES 1
 #define USE_DL_PREFIX 1
+#define HAVE_USR_INCLUDE_MALLOC_H
 
 #ifdef __cplusplus
 extern "C" {
