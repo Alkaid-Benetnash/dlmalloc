@@ -34,6 +34,7 @@
 #define MMAP_RESERVE_VMSPACE_SIZE (1L<<36)
 #define USE_LOCKS 1
 #define ONLY_MSPACES 1
+#define USE_DL_PREFIX 1
 
 #ifdef __cplusplus
 extern "C" {
